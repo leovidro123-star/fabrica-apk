@@ -1,0 +1,54 @@
+name: Build Dynamic APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'Nome do App'
+        required: true
+        default: 'MeuApp'
+      html_base64:
+        description: 'Código HTML em Base64'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configurar Java 17 (Android SDK)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Criar estrutura do App e injetar código gerado
+        run: |
+          mkdir -p www
+          echo "${{ github.event.inputs.html_base64 }}" | base64 --decode > www/index.html
+          
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          
+          # Gera um ID de pacote limpo baseado no nome do app
+          SAFE_ID=$(echo "${{ github.event.inputs.app_name }}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+          npx cap init "${{ github.event.inputs.app_name }}" "com.apkfactory.${SAFE_ID:-app}" --web-dir www
+          npx cap add android
+          npx cap sync android
+
+      - name: Compilar APK (Debug pronto para instalar)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Disponibilizar APK para Download
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.inputs.app_name }}-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
